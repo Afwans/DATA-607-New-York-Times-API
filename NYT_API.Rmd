@@ -1,0 +1,15 @@
+---
+title: "DATA 607 - New York Times API Assignment"
+subtitle: "Project Approach"
+author: "Mohd Afwan Shaikh"
+date: "2026-10-29"
+output: html_document
+---
+
+## Project Approach
+
+For this assignment, I plan to use the **New York Times Most Popular API** to explore which news sections appear most frequently among the most-viewed articles over the past 30 days. My main research question is: **Which New York Times news sections are most represented among popular articles?** I want to identify the top five sections and compare how frequently they appear in the results.
+
+I will use **R** to connect to the API using a securely stored API key and retrieve the data in JSON format. I will then convert the JSON response into a tidy data frame containing article titles, sections, publication dates, and authors. I plan to use packages such as `httr2`, `dplyr`, and `ggplot2` to collect, clean, analyze, and visualize the data.
+
+Some challenges I expect include missing information, nested JSON fields, API request limits, and differences in how news sections are labeled. I will handle missing values, check for duplicate articles, and make sure the data is organized correctly before analyzing it. Finally, I plan to create a simple bar chart comparing the most frequently represented sections and document my findings in an R Markdown report.
