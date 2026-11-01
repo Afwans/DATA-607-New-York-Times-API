@@ -1,9 +1,20 @@
 ---
-title: "DATA 607 - New York Times API Assignment"
-subtitle: "Project Approach"
+title: "DATA 607 - New York Times API Analysis"
 author: "Mohd Afwan Shaikh"
-date: "2026-10-29"
-output: html_document
+date: "2026-11-01"
+output:
+  html_document:
+    theme:
+      bootswatch: yeti
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+subtitle: Most Popular Articles by News Section
 ---
 
 ## Project Approach
@@ -13,3 +24,220 @@ For this assignment, I plan to use the **New York Times Most Popular API** to ex
 I will use **R** to connect to the API using a securely stored API key and retrieve the data in JSON format. I will then convert the JSON response into a tidy data frame containing article titles, sections, publication dates, and authors. I plan to use packages such as `httr2`, `dplyr`, and `ggplot2` to collect, clean, analyze, and visualize the data.
 
 Some challenges I expect include missing information, nested JSON fields, API request limits, and differences in how news sections are labeled. I will handle missing values, check for duplicate articles, and make sure the data is organized correctly before analyzing it. Finally, I plan to create a simple bar chart comparing the most frequently represented sections and document my findings in an R Markdown report.
+
+## Introduction
+
+The New York Times provides several APIs for accessing article information. For this assignment, I selected the **Most Popular API**, specifically the Most Viewed endpoint, which returns metadata about articles that received high readership during a selected period.
+
+My objective is to identify which news sections are most frequently represented among the returned articles and compare their distribution.
+
+**API Endpoint:**
+
+`https://api.nytimes.com/svc/mostpopular/v2/viewed/30.json`
+
+The `30` in the endpoint specifies the 30-day period. The request also uses an `api-key` query parameter for authentication.
+
+## Setup
+
+The following packages are used to connect to the API, process JSON data, organize the results, and create visualizations.
+
+```{r setup, message=FALSE, warning=FALSE}
+library(httr2)
+library(dplyr)
+library(purrr)
+library(tibble)
+library(ggplot2)
+library(knitr)
+```
+
+## API Authentication and Data Collection
+
+To protect my API key, I stored it in the `.Renviron` file and accessed it using `Sys.getenv()`. This avoids including sensitive credentials directly in the report.
+
+```{r api-request}
+# Retrieve API key from environment
+api_key <- Sys.getenv("NYT_API_KEY")
+
+if (!nzchar(api_key)) {
+  stop("NYT_API_KEY is missing. Configure it in .Renviron.")
+}
+
+# Define the API endpoint
+endpoint <- "https://api.nytimes.com/svc/mostpopular/v2/viewed/30.json"
+
+# Send request to NYT API
+response <- request(endpoint) |>
+  req_url_query(`api-key` = api_key) |>
+  req_perform()
+
+# Confirm successful request
+status_code <- resp_status(response)
+
+cat("API Response Status:", status_code)
+```
+
+## Parsing the JSON Response
+
+The API returns data in JSON format. I used `resp_body_json()` to parse the response into an R object.
+
+```{r parse-json}
+# Convert JSON response to R object
+nyt_data <- resp_body_json(
+  response,
+  simplifyVector = FALSE
+)
+
+# Check the API response
+cat("API Status:", nyt_data$status, "\n")
+cat("Articles Returned:", length(nyt_data$results))
+```
+
+## Creating a Tidy Data Frame
+
+The JSON response contains nested information about each article. I extracted six fields: article ID, title, section, publication date, author, and URL.
+
+```{r tidy-data}
+# Extract article fields into a tibble
+articles <- map_dfr(nyt_data$results, function(x) {
+  tibble(
+    article_id = as.character(x$id),
+    title = x$title,
+    section = x$section,
+    published_date = as.Date(x$published_date),
+    author = x$byline,
+    url = x$url
+  )
+})
+
+# Display dimensions
+cat("Rows:", nrow(articles), "\n")
+cat("Columns:", ncol(articles), "\n")
+
+# Display first 10 records
+kable(
+  head(articles, 10),
+  caption = "Sample of NYT Most-Viewed Articles"
+)
+```
+
+## Data Cleaning and Validation
+
+Before analyzing the results, I checked for missing values, blank section names, and duplicate article IDs. I also standardized section names by removing unnecessary whitespace.
+
+```{r data-cleaning}
+# Check missing values
+missing_values <- colSums(is.na(articles))
+
+kable(
+  data.frame(
+    Column = names(missing_values),
+    Missing_Values = as.integer(missing_values)
+  ),
+  caption = "Missing Values by Column"
+)
+
+# Check duplicates before cleaning
+duplicate_count <- sum(duplicated(articles$article_id))
+
+cat("Duplicate Article IDs:", duplicate_count, "\n")
+
+# Clean data
+articles_clean <- articles |>
+  distinct(article_id, .keep_all = TRUE) |>
+  mutate(
+    section = trimws(section),
+    section = if_else(
+      is.na(section) | section == "",
+      "Unknown",
+      section
+    ),
+    author = na_if(trimws(author), "")
+  )
+
+cat("Cleaned Articles:", nrow(articles_clean))
+```
+
+### Data-Cleaning Decisions
+
+I retained the fields most relevant to the research question and excluded nested multimedia information because it was unnecessary for the analysis. I converted publication dates into R's Date format, checked for missing values, replaced missing or blank section names with "Unknown," and removed duplicate article IDs. Blank author names were converted to missing values.
+
+## Analysis: Most Popular News Sections
+
+To answer the research question, I grouped the articles by section and counted how frequently each section appeared. I also calculated the percentage of returned articles belonging to each section.
+
+```{r section-analysis}
+# Count articles by section
+section_summary <- articles_clean |>
+  count(section, name = "article_count", sort = TRUE) |>
+  mutate(
+    percentage = round(
+      article_count / sum(article_count) * 100,
+      1
+    )
+  )
+
+# Display section summary
+kable(
+  section_summary,
+  caption = "Article Counts and Percentages by Section"
+)
+```
+
+### Top Five Sections
+
+```{r top-five}
+top_five <- section_summary |>
+  slice_head(n = 5)
+
+kable(
+  top_five,
+  caption = "Top Five Most-Represented NYT Sections"
+)
+```
+
+## Data Visualization
+
+The following chart compares the number of most-viewed articles in each section.
+
+```{r visualization, fig.width=9, fig.height=5}
+ggplot(
+  section_summary,
+  aes(
+    x = reorder(section, article_count),
+    y = article_count
+  )
+) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Most-Viewed NYT Articles by Section",
+    subtitle = "Past 30 Days",
+    x = "News Section",
+    y = "Number of Articles"
+  ) +
+  theme_minimal()
+```
+
+## Findings
+
+The API returned **`r nrow(articles_clean)` articles** across **`r nrow(section_summary)` news sections**.
+
+The section with the highest representation was **`r section_summary$section[1]`**, containing **`r section_summary$article_count[1]` articles**, or **`r section_summary$percentage[1]`%** of the returned articles.
+
+The second most represented section was **`r section_summary$section[2]`**, with **`r section_summary$article_count[2]` articles**.
+
+The five most represented sections in the current results were: **`r paste(top_five$section, collapse = ", ")`**.
+
+Based on the API results collected during testing, U.S. articles represented 55% of the 20 returned articles, followed by Opinion at 15%. The other six sections each represented 5%. These figures may change when the report is run again.
+
+## Conclusion
+
+The analysis demonstrates how an API can be used to retrieve semi-structured JSON data and transform it into a clean data frame for analysis. The results indicate that the U.S. section had the highest representation among the most-viewed articles returned during testing.
+
+However, the API only returns a selected list of popular articles, not all published articles or their actual page-view counts. Therefore, the findings describe section representation within the returned list rather than overall readership.
+
+In the future, I could collect results at regular intervals and compare changes in the most frequently represented sections over time.
+
+## References
+
+New York Times. (2026). *Most Popular API*. https://developer.nytimes.com/docs/most-popular-product/1/overview
